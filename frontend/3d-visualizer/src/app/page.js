@@ -299,9 +299,6 @@ export default function NetworkVisualizer() {
                 <div className="p-6 flex-1 overflow-y-auto relative custom-scrollbar">
                     {activeTab.type === 'layer' && activeLayerPanelData && (
                         <div className="animate-fadeIn">
-                            <h2 className="text-xl md:text-2xl font-bold font-mono text-[#00ffcc] mb-4 border-b border-white/10 pb-2">
-                                Layer {activeLayerPanelData.layer_index}
-                            </h2>
                             <div className="mb-6">
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">Tensor Shape</p>
                                 <p className="font-mono text-xs md:text-sm bg-black/50 px-3 py-2 rounded-lg border border-white/10 tracking-widest inline-block text-gray-200">

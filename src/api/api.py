@@ -22,7 +22,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -56,6 +56,7 @@ feature_extractor = tf.keras.Model(inputs=model.inputs, outputs=[layer.output fo
 CIFAR10_CLASSES = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 
                    'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
+# YOUR ORIGINAL PNG LOGIC RESTORED
 def generate_feature_grid(feature_map, max_features=64):
     if len(feature_map.shape) == 4:
         feature_map = feature_map[0]
@@ -85,7 +86,7 @@ def generate_feature_grid(feature_map, max_features=64):
     colored_grid = cv2.applyColorMap(grid_image, cv2.COLORMAP_VIRIDIS)
     
     b_channel, g_channel, r_channel = cv2.split(colored_grid)
-    alpha_channel = grid_image # Use the raw grayscale intensity as the alpha map
+    alpha_channel = grid_image 
     
     transparent_grid = cv2.merge((b_channel, g_channel, r_channel, alpha_channel))
     
@@ -102,19 +103,19 @@ async def predict_image(file: UploadFile = File(...)):
     img_normalized = img_resized.astype(np.float32) / 255.0
     img_batch = np.expand_dims(img_normalized, axis=0)
     
-    activations = feature_extractor.predict(img_batch)
-    
-    predictions = model.predict(img_batch)
-    class_idx = np.argmax(predictions[0])
+    # DIRECT CALLS FOR IMAGE AS WELL
+    activations = feature_extractor(img_batch, training=False)
+    predictions = model(img_batch, training=False)
+    class_idx = np.argmax(predictions[0].numpy())
     
     layer_data = []
     for i, activation in enumerate(activations):
-        b64_image = generate_feature_grid(activation)
+        b64_image = generate_feature_grid(activation.numpy())
         
         layer_data.append({
             "layer_index": i + 1,
             "shape": activation.shape[1:], 
-            "texture_b64": f"data:image/jpeg;base64,{b64_image}"
+            "texture_b64": f"data:image/png;base64,{b64_image}"
         })
         
     return {
@@ -142,13 +143,13 @@ async def predict_video_stream(websocket: WebSocket):
             img_normalized = img_resized.astype(np.float32) / 255.0
             img_batch = np.expand_dims(img_normalized, axis=0)
             
-            activations = feature_extractor.predict(img_batch, verbose=0)
-            predictions = model.predict(img_batch, verbose=0)
-            class_idx = np.argmax(predictions[0])
+            activations = feature_extractor(img_batch, training=False)
+            predictions = model(img_batch, training=False)
+            class_idx = np.argmax(predictions[0].numpy())
             
             layer_data = []
             for i, activation in enumerate(activations):
-                b64_image = generate_feature_grid(activation)
+                b64_image = generate_feature_grid(activation.numpy())
                 layer_data.append({
                     "layer_index": i + 1,
                     "shape": activation.shape[1:], 
