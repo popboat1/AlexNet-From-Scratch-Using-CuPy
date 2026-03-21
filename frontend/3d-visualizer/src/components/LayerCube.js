@@ -12,7 +12,7 @@ const FeatureSlice = ({ texture, gridSize, index, sizeY, sizeZ, xOffset, geometr
         const row = Math.floor(index / gridSize);
         cloned.offset.set(col / gridSize, 1 - (row + 1) / gridSize);
         
-        if (cloned.image) {
+        if (cloned.image && cloned.image.width > 0) {
             cloned.needsUpdate = true;
         }
         
