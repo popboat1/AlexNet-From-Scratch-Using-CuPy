@@ -3,6 +3,4 @@ uvicorn
 python-multipart
 numpy
 matplotlib
-tensorflow-cpu 
-opencv-python
-# cupy-cuda12x
+tensorflow-cpu==2.15.0
