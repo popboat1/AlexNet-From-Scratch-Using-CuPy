@@ -27,4 +27,4 @@ COPY --from=builder /app/frontend/out ./static
 
 EXPOSE 7860
 
-CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "src.api.api:app", "--host", "0.0.0.0", "--port", "7860"]
