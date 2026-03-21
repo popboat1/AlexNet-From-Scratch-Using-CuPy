@@ -59,7 +59,10 @@ export default function NetworkVisualizer() {
     }, []);
 
     const processVideoFrame = (timestamp) => {
-        if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) return;
+        if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) {
+            animationFrameId.current = requestAnimationFrame(processVideoFrame);
+            return;
+        }
 
         if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
             connectWebSocket();
@@ -110,11 +113,27 @@ export default function NetworkVisualizer() {
         ? layerData.find(l => l.layer_index === activeTab.layerIndex) || layout.mappedLayers.find(l => l.layer_index === activeTab.layerIndex)
         : null;
 
+    const tabs = ['Output', ...layout.mappedLayers.map(l => l.layer_index)];
+    const currentTabIndex = activeTab.type === 'prediction' ? 0 : tabs.indexOf(activeTab.layerIndex);
+
+    const handlePrevTab = () => {
+        const newIdx = currentTabIndex === 0 ? tabs.length - 1 : currentTabIndex - 1;
+        const val = tabs[newIdx];
+        if (val === 'Output') setActiveTab({ type: 'prediction', layerIndex: null });
+        else setActiveTab({ type: 'layer', layerIndex: val });
+    };
+
+    const handleNextTab = () => {
+        const newIdx = currentTabIndex === tabs.length - 1 ? 0 : currentTabIndex + 1;
+        const val = tabs[newIdx];
+        if (val === 'Output') setActiveTab({ type: 'prediction', layerIndex: null });
+        else setActiveTab({ type: 'layer', layerIndex: val });
+    };
+
     const handleFileUpload = async (event) => {
         const file = event.target.files[0];
         if (!file) return;
 
-        cancelAnimationFrame(animationFrameId.current);
         isAwaitingResponse.current = false;
         if (videoRef.current) {
             videoRef.current.pause();
@@ -162,7 +181,12 @@ export default function NetworkVisualizer() {
                 src={isVideo && previewImage ? previewImage : undefined} 
                 className="hidden absolute top-0 left-0 w-0 h-0" 
                 autoPlay muted loop playsInline
-                onPlay={() => requestAnimationFrame(processVideoFrame)}
+                onPlay={() => {
+                    // Start the loop if it isn't already running
+                    if (!animationFrameId.current) {
+                        animationFrameId.current = requestAnimationFrame(processVideoFrame);
+                    }
+                }}
             />
             <canvas ref={canvasRef} width="227" height="227" className="hidden absolute top-0 left-0 w-0 h-0" />
 
@@ -258,38 +282,17 @@ export default function NetworkVisualizer() {
             <div 
                 className={`absolute top-0 right-0 bottom-0 md:top-6 md:right-6 md:bottom-6 w-full md:w-[400px] z-40 bg-[#0f0f0f]/95 md:bg-[#0f0f0f]/80 backdrop-blur-2xl md:border border-white/10 md:rounded-2xl flex flex-col shadow-2xl overflow-hidden transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${isPanelOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-[120%]'}`}
             >
-                <div className="p-4 md:p-5 border-b border-white/10 bg-black/40 flex justify-between items-start">
-                    <div>
-                        <h3 className="text-[10px] md:text-xs text-gray-400 uppercase tracking-widest mb-3 font-semibold">Navigate Architecture</h3>
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                onClick={() => setActiveTab({ type: 'prediction', layerIndex: null })}
-                                className={`px-3 py-1.5 text-xs font-bold font-mono rounded border transition-colors ${
-                                    activeTab.type === 'prediction' 
-                                        ? 'bg-[#f97316] text-black border-[#f97316]' 
-                                        : 'bg-[#111] text-gray-400 border-gray-700 hover:bg-[#222]'
-                                }`}
-                            >
-                                Output
-                            </button>
-                            {layout.mappedLayers.map((layer) => (
-                                <button
-                                    key={layer.layer_index}
-                                    onClick={() => setActiveTab({ type: 'layer', layerIndex: layer.layer_index })}
-                                    className={`px-3 py-1.5 text-xs font-bold font-mono rounded border transition-colors ${
-                                        activeTab.type === 'layer' && activeTab.layerIndex === layer.layer_index 
-                                            ? 'bg-[#00ffcc] text-black border-[#00ffcc]' 
-                                            : 'bg-[#111] text-gray-400 border-gray-700 hover:bg-[#222]'
-                                    }`}
-                                >
-                                    Layer {layer.layer_index}
-                                </button>
-                            ))}
-                        </div>
+                <div className="p-4 md:p-5 border-b border-white/10 bg-black/40 flex justify-between items-center">
+                    <div className="flex items-center justify-between bg-[#111] border border-gray-700 rounded-lg p-1 w-48 shadow-inner">
+                        <button onClick={handlePrevTab} className="px-3 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">◀</button>
+                        <span className="font-mono font-bold text-sm text-[#00ffcc] tracking-widest">
+                            {activeTab.type === 'prediction' ? 'OUTPUT' : `LAYER ${activeTab.layerIndex}`}
+                        </span>
+                        <button onClick={handleNextTab} className="px-3 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">▶</button>
                     </div>
                     <button 
                         onClick={() => setIsPanelOpen(false)} 
-                        className="text-gray-500 hover:text-white font-bold ml-2 p-2 rounded-full hover:bg-white/10 transition-colors"
+                        className="text-gray-500 hover:text-white font-bold p-2 rounded-full hover:bg-white/10 transition-colors"
                         title="Close Panel"
                     >
                         ✕
@@ -361,7 +364,6 @@ export default function NetworkVisualizer() {
             </div>
 
             {zoomedFeature && (() => {
-                // FIX 3: Instead of using a static URL, look up the fresh frame dynamically
                 const liveLayer = layerData.find(l => l.layer_index === zoomedFeature.layer);
                 const liveUrl = liveLayer ? liveLayer.texture_b64 : "";
 
