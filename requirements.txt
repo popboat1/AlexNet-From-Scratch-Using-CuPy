@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 python-multipart
+opencv-python
 numpy
 matplotlib
 tensorflow-cpu==2.15.0
