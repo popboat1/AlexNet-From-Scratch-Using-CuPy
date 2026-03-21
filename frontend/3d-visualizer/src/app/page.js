@@ -7,6 +7,11 @@ import { InputCube } from '@/components/InputCube';
 import { LayerCube } from '@/components/LayerCube';
 import { OutputNode } from '@/components/OutputNode';
 
+// Clean SVG Icons
+const ChevronLeft = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>;
+const ChevronRight = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>;
+const CloseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+
 export default function NetworkVisualizer() {
     const [activeTab, setActiveTab] = useState({ type: 'prediction', layerIndex: null });
     const [layerData, setLayerData] = useState([]);
@@ -20,42 +25,12 @@ export default function NetworkVisualizer() {
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
-    const wsRef = useRef(null);
     const isAwaitingResponse = useRef(false);
     const animationFrameId = useRef(null);
     const lastFrameTime = useRef(0);
-    const isVideoStateRef = useRef(false);
-
-    const connectWebSocket = () => {
-        if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-            return;
-        }
-        
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/predict-video`;
-
-        wsRef.current = new WebSocket(wsUrl);
-        
-        wsRef.current.onmessage = (event) => {
-            if (!isVideoStateRef.current) return; 
-            const data = JSON.parse(event.data);
-            setLayerData(data.layers);
-            setPrediction(data.prediction);
-            isAwaitingResponse.current = false; 
-        };
-
-        wsRef.current.onclose = () => {
-            console.log("WebSocket closed by server.");
-            isAwaitingResponse.current = false;
-        };
-    };
 
     useEffect(() => {
-        connectWebSocket();
-        return () => {
-            if (wsRef.current) wsRef.current.close();
-            cancelAnimationFrame(animationFrameId.current);
-        };
+        return () => cancelAnimationFrame(animationFrameId.current);
     }, []);
 
     const processVideoFrame = (timestamp) => {
@@ -64,18 +39,39 @@ export default function NetworkVisualizer() {
             return;
         }
 
-        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
-            connectWebSocket();
-        }
-
-        if (timestamp - lastFrameTime.current >= 80) {
-            if (!isAwaitingResponse.current && wsRef.current?.readyState === WebSocket.OPEN) {
+        if (timestamp - lastFrameTime.current >= 150) {
+            if (!isAwaitingResponse.current) {
+                isAwaitingResponse.current = true;
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
                 ctx.drawImage(videoRef.current, 0, 0, 227, 227);
-                const base64Frame = canvas.toDataURL('image/jpeg', 0.4); 
-                isAwaitingResponse.current = true;
-                wsRef.current.send(base64Frame);
+                
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        isAwaitingResponse.current = false;
+                        return;
+                    }
+                    
+                    const formData = new FormData();
+                    formData.append("file", blob, "frame.jpg");
+
+                    try {
+                        const response = await fetch("/predict", {
+                            method: "POST",
+                            body: formData,
+                        });
+                        const data = await response.json();
+                        if (data && data.layers) {
+                            setLayerData(data.layers);
+                            setPrediction(data.prediction);
+                        }
+                    } catch (error) {
+                        console.error("Frame dropped:", error);
+                    } finally {
+                        isAwaitingResponse.current = false;
+                    }
+                }, 'image/jpeg', 0.6);
+
                 lastFrameTime.current = timestamp;
             }
         }
@@ -98,9 +94,14 @@ export default function NetworkVisualizer() {
         if (previewImage) currentX += 0.1 + (blockGap * 0.5); 
 
         const mappedLayers = activeData.map((layer) => {
-            const sizeY = Math.max(0.8, layer.shape[0] * 0.07);
-            const sizeZ = Math.max(0.8, layer.shape[1] * 0.07);
-            const sizeX = Math.max(0.8, layer.shape[2] * 0.01);
+            const s0 = layer.shape && layer.shape[0] ? layer.shape[0] : 10;
+            const s1 = layer.shape && layer.shape[1] ? layer.shape[1] : 10;
+            const s2 = layer.shape && layer.shape[2] ? layer.shape[2] : 10;
+            
+            const sizeY = Math.max(0.8, s0 * 0.07);
+            const sizeZ = Math.max(0.8, s1 * 0.07);
+            const sizeX = Math.max(0.8, s2 * 0.01);
+            
             const xPos = currentX + sizeX / 2;
             currentX = xPos + sizeX / 2 + blockGap;
             return { ...layer, size: [sizeX, sizeY, sizeZ], xPos };
@@ -145,7 +146,6 @@ export default function NetworkVisualizer() {
         const isVid = file.type.startsWith('video/');
         
         setIsVideo(isVid);
-        isVideoStateRef.current = isVid; 
         setPreviewImage(fileUrl);
         setActiveTab({ type: 'prediction', layerIndex: null });
         setZoomedFeature(null);
@@ -182,7 +182,6 @@ export default function NetworkVisualizer() {
                 className="hidden absolute top-0 left-0 w-0 h-0" 
                 autoPlay muted loop playsInline
                 onPlay={() => {
-                    // Start the loop if it isn't already running
                     if (!animationFrameId.current) {
                         animationFrameId.current = requestAnimationFrame(processVideoFrame);
                     }
@@ -273,9 +272,9 @@ export default function NetworkVisualizer() {
             {!isPanelOpen && (
                 <button
                     onClick={() => setIsPanelOpen(true)}
-                    className="absolute top-6 right-6 z-30 bg-[#111] border border-white/10 text-[#00ffcc] font-mono font-bold px-4 py-2 rounded-lg shadow-2xl hover:bg-[#222] transition-colors text-xs md:text-sm"
+                    className="absolute top-6 right-6 z-30 bg-[#111] border border-white/10 text-[#00ffcc] font-mono font-bold px-4 py-2 rounded-lg shadow-2xl hover:bg-[#222] transition-colors text-xs md:text-sm flex items-center gap-2"
                 >
-                    ◀ DATA PANEL
+                    <ChevronLeft /> DATA PANEL
                 </button>
             )}
 
@@ -284,18 +283,18 @@ export default function NetworkVisualizer() {
             >
                 <div className="p-4 md:p-5 border-b border-white/10 bg-black/40 flex justify-between items-center">
                     <div className="flex items-center justify-between bg-[#111] border border-gray-700 rounded-lg p-1 w-48 shadow-inner">
-                        <button onClick={handlePrevTab} className="px-3 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">◀</button>
+                        <button onClick={handlePrevTab} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"><ChevronLeft /></button>
                         <span className="font-mono font-bold text-sm text-[#00ffcc] tracking-widest">
                             {activeTab.type === 'prediction' ? 'OUTPUT' : `LAYER ${activeTab.layerIndex}`}
                         </span>
-                        <button onClick={handleNextTab} className="px-3 py-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors text-sm">▶</button>
+                        <button onClick={handleNextTab} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"><ChevronRight /></button>
                     </div>
                     <button 
                         onClick={() => setIsPanelOpen(false)} 
-                        className="text-gray-500 hover:text-white font-bold p-2 rounded-full hover:bg-white/10 transition-colors"
+                        className="text-gray-500 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors"
                         title="Close Panel"
                     >
-                        ✕
+                        <CloseIcon />
                     </button>
                 </div>
 
@@ -305,7 +304,7 @@ export default function NetworkVisualizer() {
                             <div className="mb-6">
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">Tensor Shape</p>
                                 <p className="font-mono text-xs md:text-sm bg-black/50 px-3 py-2 rounded-lg border border-white/10 tracking-widest inline-block text-gray-200">
-                                    {activeLayerPanelData.shape?.join(' × ')}
+                                    {activeLayerPanelData.shape ? activeLayerPanelData.shape.join(' × ') : 'Loading...'}
                                 </p>
                             </div>
                             <div>
