@@ -26,11 +26,16 @@ export default function NetworkVisualizer() {
     const lastFrameTime = useRef(0);
     const isVideoStateRef = useRef(false);
 
-    useEffect(() => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws';
+    const connectWebSocket = () => {
+        if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+        
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/predict-video`;
 
         wsRef.current = new WebSocket(wsUrl);
+        
         wsRef.current.onmessage = (event) => {
             if (!isVideoStateRef.current) return; 
             const data = JSON.parse(event.data);
@@ -38,6 +43,15 @@ export default function NetworkVisualizer() {
             setPrediction(data.prediction);
             isAwaitingResponse.current = false; 
         };
+
+        wsRef.current.onclose = () => {
+            console.log("WebSocket closed by server.");
+            isAwaitingResponse.current = false;
+        };
+    };
+
+    useEffect(() => {
+        connectWebSocket();
         return () => {
             if (wsRef.current) wsRef.current.close();
             cancelAnimationFrame(animationFrameId.current);
@@ -46,6 +60,10 @@ export default function NetworkVisualizer() {
 
     const processVideoFrame = (timestamp) => {
         if (!videoRef.current || videoRef.current.paused || videoRef.current.ended) return;
+
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+            connectWebSocket();
+        }
 
         if (timestamp - lastFrameTime.current >= 80) {
             if (!isAwaitingResponse.current && wsRef.current?.readyState === WebSocket.OPEN) {
@@ -130,7 +148,7 @@ export default function NetworkVisualizer() {
             setPrediction(data.prediction); 
         } catch (error) {
             console.error("Error:", error);
-            alert("Make sure your FastAPI server is running on localhost:8000!");
+            alert("Make sure your FastAPI server is running!");
         } finally {
             setIsProcessing(false);
         }
@@ -143,7 +161,7 @@ export default function NetworkVisualizer() {
                 ref={videoRef} 
                 src={isVideo && previewImage ? previewImage : undefined} 
                 className="hidden absolute top-0 left-0 w-0 h-0" 
-                autoPlay muted loop 
+                autoPlay muted loop playsInline
                 onPlay={() => requestAnimationFrame(processVideoFrame)}
             />
             <canvas ref={canvasRef} width="227" height="227" className="hidden absolute top-0 left-0 w-0 h-0" />
@@ -204,7 +222,7 @@ export default function NetworkVisualizer() {
                     {previewImage && (
                         <div className="h-16 w-16 md:hidden border border-white/20 rounded-lg overflow-hidden relative shrink-0">
                             {isVideo && <div className="absolute top-1 right-1 bg-red-500 w-2 h-2 rounded-full animate-pulse z-10"></div>}
-                            {isVideo ? <video src={previewImage} className="w-full h-full object-cover" autoPlay muted loop /> : <img src={previewImage} alt="Input" className="w-full h-full object-cover" />}
+                            {isVideo ? <video src={previewImage} className="w-full h-full object-cover" autoPlay muted loop playsInline /> : <img src={previewImage} alt="Input" className="w-full h-full object-cover" />}
                         </div>
                     )}
                 </div>
@@ -223,7 +241,7 @@ export default function NetworkVisualizer() {
                 {previewImage && (
                     <div className="hidden md:block h-16 w-16 border border-white/20 rounded-lg overflow-hidden relative shrink-0 shadow-lg">
                         {isVideo && <div className="absolute top-1 right-1 bg-red-500 w-2 h-2 rounded-full animate-pulse z-10"></div>}
-                        {isVideo ? <video src={previewImage} className="w-full h-full object-cover" autoPlay muted loop /> : <img src={previewImage} alt="Input" className="w-full h-full object-cover" />}
+                        {isVideo ? <video src={previewImage} className="w-full h-full object-cover" autoPlay muted loop playsInline /> : <img src={previewImage} alt="Input" className="w-full h-full object-cover" />}
                     </div>
                 )}
             </div>
@@ -237,7 +255,6 @@ export default function NetworkVisualizer() {
                 </button>
             )}
 
-            {/* FIX: Set md:w-[400px] instead of md-w-100 */}
             <div 
                 className={`absolute top-0 right-0 bottom-0 md:top-6 md:right-6 md:bottom-6 w-full md:w-[400px] z-40 bg-[#0f0f0f]/95 md:bg-[#0f0f0f]/80 backdrop-blur-2xl md:border border-white/10 md:rounded-2xl flex flex-col shadow-2xl overflow-hidden transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${isPanelOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-[120%]'}`}
             >
@@ -315,7 +332,7 @@ export default function NetworkVisualizer() {
                                                 return (
                                                     <div 
                                                         key={i}
-                                                        onClick={() => hasData && setZoomedFeature({ layer: activeLayerPanelData.layer_index, index: i, bgPosX, bgPosY, url: activeLayerPanelData.texture_b64, gridSize })}
+                                                        onClick={() => hasData && setZoomedFeature({ layer: activeLayerPanelData.layer_index, index: i, bgPosX, bgPosY, gridSize })}
                                                         className="aspect-square bg-black/80 rounded-sm cursor-pointer hover:ring-2 hover:ring-[#00ffcc] hover:z-10 transition-all relative"
                                                         style={{
                                                             backgroundImage: hasData ? `url(${activeLayerPanelData.texture_b64})` : 'none',
@@ -337,7 +354,6 @@ export default function NetworkVisualizer() {
                         <div className="flex flex-col items-center justify-center h-full text-center pb-10 animate-fadeIn">
                             <p className="text-xs text-gray-500 uppercase tracking-wider mb-4 font-semibold">Final Classification</p>
                             <div className="bg-black/50 border border-[#f97316]/30 rounded-2xl p-6 md:p-8 w-full shadow-[0_0_30px_rgba(249,115,22,0.1)]">
-                                {/* FIX: Corrected typo 'warp-break-word' to 'break-words' */}
                                 <h1 className="text-2xl md:text-3xl font-black text-[#f97316] uppercase tracking-widest break-words drop-shadow-md">
                                     {prediction || "No Data"}
                                 </h1>
@@ -347,36 +363,42 @@ export default function NetworkVisualizer() {
                 </div>
             </div>
 
-            {zoomedFeature && (
-                <div 
-                    className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-                    onClick={() => setZoomedFeature(null)}
-                >
+            {zoomedFeature && (() => {
+                // FIX 3: Instead of using a static URL, look up the fresh frame dynamically
+                const liveLayer = layerData.find(l => l.layer_index === zoomedFeature.layer);
+                const liveUrl = liveLayer ? liveLayer.texture_b64 : "";
+
+                return (
                     <div 
-                        className="bg-[#0f0f0f] border border-white/10 p-6 md:p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-full"
-                        onClick={(e) => e.stopPropagation()} 
+                        className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+                        onClick={() => setZoomedFeature(null)}
                     >
-                        <h3 className="text-[#00ffcc] font-bold font-mono mb-6 text-lg md:text-xl tracking-widest text-center">
-                            LAYER {zoomedFeature.layer} <span className="text-gray-600">{"//"}</span> FEATURE {zoomedFeature.index + 1}
-                        </h3>
                         <div 
-                            className="w-64 h-64 md:w-96 md:h-96 border-2 border-white/10 rounded-xl bg-black shadow-inner"
-                            style={{
-                                backgroundImage: `url(${zoomedFeature.url})`,
-                                backgroundSize: `${zoomedFeature.gridSize * 100}% ${zoomedFeature.gridSize * 100}%`,
-                                backgroundPosition: `${zoomedFeature.bgPosX}% ${zoomedFeature.bgPosY}%`,
-                                imageRendering: 'pixelated'
-                            }}
-                        />
-                        <button 
-                            className="mt-8 w-full bg-white hover:bg-gray-200 text-black font-bold py-3 rounded-lg transition-colors text-sm"
-                            onClick={() => setZoomedFeature(null)}
+                            className="bg-[#0f0f0f] border border-white/10 p-6 md:p-8 rounded-2xl shadow-2xl flex flex-col items-center max-w-full"
+                            onClick={(e) => e.stopPropagation()} 
                         >
-                            Close View
-                        </button>
+                            <h3 className="text-[#00ffcc] font-bold font-mono mb-6 text-lg md:text-xl tracking-widest text-center">
+                                LAYER {zoomedFeature.layer} <span className="text-gray-600">{"//"}</span> FEATURE {zoomedFeature.index + 1}
+                            </h3>
+                            <div 
+                                className="w-64 h-64 md:w-96 md:h-96 border-2 border-white/10 rounded-xl bg-black shadow-inner"
+                                style={{
+                                    backgroundImage: `url(${liveUrl})`,
+                                    backgroundSize: `${zoomedFeature.gridSize * 100}% ${zoomedFeature.gridSize * 100}%`,
+                                    backgroundPosition: `${zoomedFeature.bgPosX}% ${zoomedFeature.bgPosY}%`,
+                                    imageRendering: 'pixelated'
+                                }}
+                            />
+                            <button 
+                                className="mt-8 w-full bg-white hover:bg-gray-200 text-black font-bold py-3 rounded-lg transition-colors text-sm"
+                                onClick={() => setZoomedFeature(null)}
+                            >
+                                Close View
+                            </button>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </div>
     );
 }
