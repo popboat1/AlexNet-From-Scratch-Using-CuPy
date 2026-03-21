@@ -29,8 +29,11 @@ app.add_middleware(
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, 'alexnet_cifar10_keras.h5')
+
 print("Loading AlexNet from scratch...")
-model = tf.keras.models.load_model('alexnet_cifar10_keras.h5')
+model = tf.keras.models.load_model(MODEL_PATH)
 
 conv_layers = [layer for layer in model.layers if isinstance(layer, tf.keras.layers.Conv2D)]
 feature_extractor = tf.keras.Model(inputs=model.inputs, outputs=[layer.output for layer in conv_layers])
