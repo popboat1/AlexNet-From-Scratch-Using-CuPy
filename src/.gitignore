@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+venv/
+env/
+.venv/
+
+.env
+
+*.h5
+*.pkl
+/data/
+
+.ipynb_checkpoints
+
+.pytest_cache/
