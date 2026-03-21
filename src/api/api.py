@@ -8,7 +8,6 @@ import base64
 import math
 import os
 import asyncio
-import traceback
 
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
@@ -23,7 +22,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -82,9 +81,15 @@ def generate_feature_grid(feature_map, max_features=64):
         grid_image[y_start:y_end, x_start:x_end] = channel_img
 
     grid_image = np.uint8(grid_image)
+    
     colored_grid = cv2.applyColorMap(grid_image, cv2.COLORMAP_VIRIDIS)
     
-    _, buffer = cv2.imencode('.jpg', colored_grid, [cv2.IMWRITE_JPEG_QUALITY, 60])
+    b_channel, g_channel, r_channel = cv2.split(colored_grid)
+    alpha_channel = grid_image # Use the raw grayscale intensity as the alpha map
+    
+    transparent_grid = cv2.merge((b_channel, g_channel, r_channel, alpha_channel))
+    
+    _, buffer = cv2.imencode('.png', transparent_grid)
     return base64.b64encode(buffer).decode('utf-8')
 
 @app.post("/predict")
@@ -98,12 +103,14 @@ async def predict_image(file: UploadFile = File(...)):
     img_batch = np.expand_dims(img_normalized, axis=0)
     
     activations = feature_extractor.predict(img_batch)
+    
     predictions = model.predict(img_batch)
     class_idx = np.argmax(predictions[0])
     
     layer_data = []
     for i, activation in enumerate(activations):
         b64_image = generate_feature_grid(activation)
+        
         layer_data.append({
             "layer_index": i + 1,
             "shape": activation.shape[1:], 
@@ -135,17 +142,17 @@ async def predict_video_stream(websocket: WebSocket):
             img_normalized = img_resized.astype(np.float32) / 255.0
             img_batch = np.expand_dims(img_normalized, axis=0)
             
-            activations = feature_extractor(img_batch, training=False)
-            predictions = model(img_batch, training=False)
-            class_idx = np.argmax(predictions[0].numpy())
+            activations = feature_extractor.predict(img_batch, verbose=0)
+            predictions = model.predict(img_batch, verbose=0)
+            class_idx = np.argmax(predictions[0])
             
             layer_data = []
             for i, activation in enumerate(activations):
-                b64_image = generate_feature_grid(activation.numpy())
+                b64_image = generate_feature_grid(activation)
                 layer_data.append({
                     "layer_index": i + 1,
                     "shape": activation.shape[1:], 
-                    "texture_b64": f"data:image/jpeg;base64,{b64_image}"
+                    "texture_b64": f"data:image/png;base64,{b64_image}"
                 })
                 
             await websocket.send_json({
@@ -156,9 +163,8 @@ async def predict_video_stream(websocket: WebSocket):
             await asyncio.sleep(0.01)
             
     except WebSocketDisconnect:
-        print("WebSocket Disconnected Cleanly")
+        print("WebSocket Disconnected")
     except Exception as e:
-        print(f"WebSocket Crashed:")
-        traceback.print_exc()
+        print(f"WebSocket Error: {e}")
         
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
